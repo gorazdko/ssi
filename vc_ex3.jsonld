@@ -1,0 +1,36 @@
+{
+  "@context": [
+    "https://www.w3.org/2018/credentials/v1",
+    {
+      "version": "https://schema.org/version",
+      "programmingLanguage": "https://schema.org/programmingLanguage",
+      "codeRepository": "https://schema.org/codeRepository",
+      "SoftwareSourceCode": "https://schema.org/SoftwareSourceCode",
+      "creator": "https://schema.org/creator"
+    }
+  ],
+  "id": "https://example.com/credentials/3847",
+  "type": [
+    "VerifiableCredential"
+  ],
+  "credentialSubject": {
+    "id": "did:example:ebfeb1f712ebc6f1c276e12ec21",
+    "programmingLanguage": "Python",
+    "type": "SoftwareSourceCode",
+    "version": "6b5b64afd16db4b075bfe68d06f6d58f3189f13a",
+    "codeRepository": "https://github.com/BlockchainCommons/bc-seedtool-cli.git",
+    "creator": {
+      "id": "did:onion:fscst5exmlmr262byztwz4kzhggjlzumvc2ndvgytzoucr2tkgxf7mid.onion",
+      "type": "Person|Organization"
+    }
+  },
+  "issuer": "https://example.edu/issuers/565049",
+  "issuanceDate": "2019-05-01T19:23:24Z",
+  "proof": {
+    "type": "Ed25519Signature2018",
+    "proofPurpose": "assertionMethod",
+    "verificationMethod": "did:key:z6MkgKnUaGk7CNTuUjAoeLV9MWE6Y7QvFpdAhrmE8X9vJjYf#z6MkgKnUaGk7CNTuUjAoeLV9MWE6Y7QvFpdAhrmE8X9vJjYf",
+    "created": "2021-01-17T21:29:46.824Z",
+    "jws": "eyJhbGciOiJFZERTQSIsImNyaXQiOlsiYjY0Il0sImI2NCI6ZmFsc2V9..EO7UjJSSGi0qjSRWele2XT_DQkm6GhxYP6yj4fxsgvopKsViJ831xtMKVg28znjZmiJprUaPNtVSdU_PEOfDBg"
+  }
+}

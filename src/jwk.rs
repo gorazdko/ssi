@@ -212,6 +212,78 @@ impl JWK {
         Err(Error::KeyTypeNotImplemented)
     }
 
+    // Need Tor deamon running
+    pub fn from_did_onion(verificationMethod: String) -> Result<JWK, Error> {
+        //let id_of_verificationMethod = "#iFPG3dtLcg-0jI4CVa9b94g06KadgrpM8rC9EMI94nA";
+        //let did_onion = "did:onion:fscst5exmlmr262byztwz4kzhggjlzumvc2ndvgytzoucr2tkgxf7mid.onion";
+        // did onion resolves to:
+        //let did_onion_resolved = "http://fscst5exmlmr262byztwz4kzhggjlzumvc2ndvgytzoucr2tkgxf7mid.onion/.well-known/did.json";
+
+        use serde_json::Value;
+
+        let mut id_of_verificationMethod = verificationMethod.split("#");
+        let id: Vec<&str> = id_of_verificationMethod.collect();
+
+        let did_onion = id[0];
+        let id_of_verificationMethod = "#".to_owned() + id[1];
+
+        let did_onion_resolved: String =
+            "http://".to_owned() + &did_onion[10..] + ".onion/.well-known/did.json";
+
+        println!("did_onion_resolved: {:?}", did_onion_resolved);
+
+        // make a http request over Tor and get the DID document
+        use std::process::Command;
+        let cmd = Command::new("curl")
+            .args(&["--socks5-hostname", "127.0.0.1:9050", &did_onion_resolved])
+            .output()
+            .expect("failed to execute process");
+
+        let res = String::from_utf8(cmd.stdout.clone()).unwrap();
+
+        let vc: Value = serde_json::from_str(&res).unwrap();
+
+        //println!("pretty {}", serde_json::to_string_pretty(&vc).unwrap());
+
+        // extract the key from DID document according to id_of_verificationMethod
+        let assertion_method = &vc["assertionMethod"];
+        println!(
+            "assertionMethod id {}",
+            serde_json::to_string_pretty(&assertion_method).unwrap()
+        );
+
+        let mut pubkey: Option<&str> = None;
+        for i in 0..vc["VerificationMethod"].as_array().unwrap().len() {
+            let v = &vc["VerificationMethod"][i];
+
+            if v["id"] == id_of_verificationMethod {
+                println!("v: {:?}", v);
+                pubkey = v["publicKeyBase58"].as_str(); // TODO: hardcoded
+                break;
+            }
+        }
+
+        //println!("pubkey: {:?}", pubkey.unwrap());
+        let key_decoded_1 = bs58::decode(pubkey.unwrap()).into_vec().unwrap();
+        println!("pubkey from DID document decoded: {:?}", key_decoded_1);
+
+        return Ok(JWK {
+            params: Params::OKP(OctetParams {
+                curve: "Ed25519".to_string(),
+                public_key: Base64urlUInt(key_decoded_1),
+                private_key: None,
+            }),
+            public_key_use: None,
+            key_operations: None,
+            algorithm: None,
+            key_id: None,
+            x509_url: None,
+            x509_certificate_chain: None,
+            x509_thumbprint_sha1: None,
+            x509_thumbprint_sha256: None,
+        });
+    }
+
     pub fn to_did(&self) -> Result<String, Error> {
         self.params.to_did()
     }

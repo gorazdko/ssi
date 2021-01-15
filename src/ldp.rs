@@ -108,6 +108,12 @@ fn resolve_key(verification_method: &str) -> Result<JWK, Error> {
     if &verification_method[..8] == "did:key:" {
         return JWK::from_did_key(verification_method);
     }
+
+    if &verification_method[..10] == "did:onion:" {
+        return JWK::from_did_onion(verification_method.to_string());
+        // TODO
+    }
+
     Err(Error::ResourceNotFound)
 }
 
@@ -168,7 +174,9 @@ async fn verify(proof: &Proof, document: &(dyn LinkedDataDocument + Sync)) -> Re
         .verification_method
         .as_ref()
         .ok_or(Error::MissingVerificationMethod)?;
+
     let key = resolve_key(&verification_method)?;
+
     let message = to_jws_payload(document, proof).await?;
     crate::jws::detached_verify(&jws, &message, &key)?;
     Ok(())

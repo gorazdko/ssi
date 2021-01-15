@@ -444,9 +444,11 @@ mod tests {
             let in_file_name = num.to_string() + "-in.nq";
             path.set_file_name(PathBuf::from(in_file_name));
             let in_str = fs::read_to_string(&path).unwrap();
+
             let dataset = DataSet::from_str(&in_str).unwrap();
             let dataset_normalized = normalize(&dataset).unwrap();
             let normalized = dataset_normalized.to_nquads().unwrap();
+
             if &normalized == &expected_str {
                 passed += 1;
             } else {

@@ -1,0 +1,10 @@
+{
+  "@context": {
+    "@version": 1.1,
+    "programmingLanguage": "https://schema.org/programmingLanguage",
+    "SoftwareSourceCode": "https://schema.org/SoftwareSourceCode",
+    "codeRepository": "https://schema.org/codeRepository",
+    "version": "https://schema.org/version",
+    "creator": "https://schema.org/creator"
+  }
+}

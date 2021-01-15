@@ -603,6 +603,16 @@ impl Credential {
 
     fn filter_proofs(&self, options: Option<LinkedDataProofOptions>) -> Vec<&Proof> {
         let mut options = options.unwrap_or_default();
+
+        let var = self.proof.as_ref().unwrap();
+
+        let var = match var {
+            OneOrMany::One(t) => t,
+            _ => panic!("enum error"),
+        };
+
+        let var = var.verification_method.as_ref().unwrap();
+
         // Use issuer as default verificationMethod
         if options.verification_method.is_none() {
             if let Some(ref issuer) = self.issuer {
@@ -610,8 +620,15 @@ impl Credential {
                     Issuer::URI(uri) => uri,
                     Issuer::Object(object_with_id) => object_with_id.id,
                 };
+
                 let URI::String(issuer_did) = issuer_uri;
-                options.verification_method = did_to_verification_method(&issuer_did);
+
+                // TODO bad hardcoding
+                if &var[0..9] == "did:onion" {
+                    options.verification_method = did_to_verification_method(&var);
+                } else {
+                    options.verification_method = did_to_verification_method(&issuer_did);
+                }
             }
         }
         self.proof
@@ -623,7 +640,9 @@ impl Credential {
 
     pub async fn verify(&self, options: Option<LinkedDataProofOptions>) -> VerificationResult {
         let proofs = self.filter_proofs(options);
+
         if proofs.is_empty() {
+            //println!("++proof is empty {:?}", "proof is empty");
             return VerificationResult::error("No applicable proof");
             // TODO: say why, e.g. expired
         }
@@ -637,6 +656,7 @@ impl Credential {
             };
             results.append(&mut result);
         }
+
         results
     }
 
@@ -800,6 +820,10 @@ impl Presentation {
 }
 
 fn did_to_verification_method(did: &str) -> Option<String> {
+    if &did[..10] == "did:onion:" {
+        return Some(did.to_string());
+    }
+
     if &did[..8] != "did:key:" {
         return None;
     }
@@ -1233,6 +1257,140 @@ _:c14n0 <https://w3id.org/security#proofPurpose> <https://w3id.org/security#asse
         assert!(result.errors.is_empty());
         assert!(result.warnings.is_empty());
     }
+
+    #[async_std::test]
+    async fn credential_verify_vc3_4() {
+        let vc_str = include_str!("../examples/vc3_4.jsonld");
+        let vc = Credential::from_json(vc_str).unwrap();
+        let result = vc.verify(None).await;
+        println!("{:#?}", result);
+        assert!(result.errors.is_empty());
+        assert!(result.warnings.is_empty());
+    }
+
+    #[async_std::test]
+    async fn credential_verify_vc3_4_false_sig() {
+        let vc_str = include_str!("../examples/vc3_4_false_sig.jsonld");
+        let vc = Credential::from_json(vc_str).unwrap();
+        let result = vc.verify(None).await;
+        println!("{:#?}", result);
+        assert!(!result.errors.is_empty());
+    }
+
+    #[async_std::test]
+    async fn credential_verify_vc3_3() {
+        let vc_str = include_str!("../examples/vc3_3.jsonld");
+        let vc = Credential::from_json(vc_str).unwrap();
+        let result = vc.verify(None).await;
+        println!("{:#?}", result);
+        assert!(result.errors.is_empty());
+        assert!(result.warnings.is_empty());
+    }
+
+    pub fn pubkey_to_onion_address(pubkey: Vec<u8>) -> String {
+        use base32::{decode, Alphabet};
+        use sha3::{Digest, Sha3_256};
+        // convert to onion address/hostname
+        // onion_address = base32(PUBKEY | CHECKSUM | VERSION) + ".onion"
+        //encode(Alphabet::RFC4648 { padding: false }, &onion_addr[0..56]).unwrap();
+        //".onion checksum"
+        // CHECKSUM = H(".onion checksum" | PUBKEY | VERSION)[:2]
+        let mut hasher = Sha3_256::new();
+        hasher.update(b".onion checksum");
+        hasher.update(pubkey.clone());
+        hasher.update([3]); // version
+        let dgst = hasher.finalize();
+        let mut chk = [0u8; 2];
+        chk.copy_from_slice(&dgst[0..2]);
+
+        let mut addr: Vec<u8> = pubkey.clone().into();
+        addr.extend(chk.iter().copied());
+        addr.push(3); // onion version (v3)
+
+        let mut arr = [0u8; 35];
+        for (place, element) in arr.iter_mut().zip(addr.iter()) {
+            *place = *element;
+        }
+
+        base32::encode(Alphabet::RFC4648 { padding: false }, &arr).to_ascii_lowercase() + ".onion"
+    }
+
+    /*
+        #[async_std::test]
+        // needs Tor daemon running
+        async fn did_onion_resolve() {
+            let id_of_verificationMethod = "#iFPG3dtLcg-0jI4CVa9b94g06KadgrpM8rC9EMI94nA";
+            let did_onion = "did:onion:fscst5exmlmr262byztwz4kzhggjlzumvc2ndvgytzoucr2tkgxf7mid.onion";
+            // did onion resolves to:
+            let did_onion_resolved = "http://fscst5exmlmr262byztwz4kzhggjlzumvc2ndvgytzoucr2tkgxf7mid.onion/.well-known/did.json";
+
+            // make a http request over Tor and get the DID document
+            use std::process::Command;
+            let cmd = Command::new("curl")
+                .args(&["--socks5-hostname", "127.0.0.1:9050", did_onion_resolved])
+                .output()
+                .expect("failed to execute process");
+
+            let res = String::from_utf8(cmd.stdout).unwrap();
+            let vc: Value = serde_json::from_str(&res).unwrap();
+
+            //println!("pretty {}", serde_json::to_string_pretty(&vc).unwrap());
+
+            // extract the key from DID document according to id_of_verificationMethod
+            let assertion_method = &vc["assertionMethod"];
+            println!(
+                "assertionMethod id {}",
+                serde_json::to_string_pretty(&assertion_method).unwrap()
+            );
+
+            let mut pubkey: Option<&str> = None;
+            for i in 0..vc["VerificationMethod"].as_array().unwrap().len() {
+                let v = &vc["VerificationMethod"][i];
+                if v["id"] == id_of_verificationMethod {
+                    pubkey = v["publicKeyBase58"].as_str();
+                    break;
+                }
+            }
+
+            //println!("pubkey: {:?}", pubkey.unwrap());
+            let key_decoded_1 = bs58::decode(pubkey.unwrap()).into_vec().unwrap();
+            println!("pubkey from DID document decoded: {:?}", key_decoded_1);
+
+            // now extract the pubkey from did:key whic the VC was signed with
+            use crate::jwk::{Params, JWK};
+            let key_str = include_str!("../tests/ed25519-2020-10-18_gorazd.json");
+            let key: JWK = serde_json::from_str(key_str).unwrap();
+
+            let public_key = match key.params {
+                Params::OKP(pubkey) => Some(pubkey.public_key),
+                _ => None,
+            };
+            let key = String::from(public_key.unwrap());
+            let key_decoded_2 = base64::decode_config(key, base64::URL_SAFE_NO_PAD).unwrap();
+
+            println!("public key from did:key decoded: {:?}", key_decoded_2);
+
+            // pubkey from DID document must be the same as pubkey in did:key
+            assert_eq!(key_decoded_1, key_decoded_2);
+
+            // Is the pubkey raeally our onion address?
+            let onion_addr = pubkey_to_onion_address(key_decoded_1);
+            assert_eq!(
+                onion_addr,
+                "fscst5exmlmr262byztwz4kzhggjlzumvc2ndvgytzoucr2tkgxf7mid.onion"
+            );
+
+            /*
+                    let vc_str = include_str!("../examples/vc_this.jsonld");
+                    let vc = Credential::from_json(vc_str).unwrap();
+                    let result = vc.verify(None).await;
+                    println!("{:#?}", result);
+                    assert!(result.errors.is_empty());
+                    assert!(result.warnings.is_empty());
+            */
+        }
+
+    */
 
     #[async_std::test]
     async fn cannot_add_properties_after_signing() {
